@@ -1,6 +1,7 @@
 // ==========================================
-// CHARACTERS STORE - Atualizado para Nova API
+// CHARACTERS STORE - COMPLETO E CORRIGIDO
 // ==========================================
+// Arquivo: src/lib/stores/characters.ts
 
 import { writable, derived, get } from 'svelte/store';
 import { toast } from 'svelte-sonner';
@@ -17,7 +18,7 @@ import type {
 } from '../types';
 
 // ==========================================
-// STORES PRINCIPAIS
+// STORE PRINCIPAL
 // ==========================================
 
 const createCharacterStore = () => {
@@ -36,7 +37,7 @@ const createCharacterStore = () => {
     subscribe,
 
     // ==========================================
-    // AÇÕES DA LISTA
+    // CARREGAR LISTA
     // ==========================================
 
     async loadAll(): Promise<void> {
@@ -53,9 +54,7 @@ const createCharacterStore = () => {
           isLoading: false,
         }));
 
-        logger.characterAction('Lista carregada', undefined, {
-          count: characters.length
-        });
+        logger.info('Lista carregada', { count: characters.length });
 
       } catch (error: any) {
         logger.error('Erro ao carregar personagens', error);
@@ -67,7 +66,7 @@ const createCharacterStore = () => {
           error: error.message || ERROR_MESSAGES.CHARACTER.LOAD_FAILED,
         }));
 
-        toast.error(ERROR_MESSAGES.CHARACTER.LOAD_FAILED);
+        toast.error('Erro ao carregar personagens');
       }
     },
 
@@ -76,14 +75,14 @@ const createCharacterStore = () => {
     },
 
     // ==========================================
-    // AÇÕES DO PERSONAGEM ATUAL
+    // PERSONAGEM ATUAL
     // ==========================================
 
     async select(id: number): Promise<void> {
       update(state => ({ ...state, isLoadingCurrent: true, error: null }));
 
       try {
-        logger.characterAction('Selecionando personagem', id);
+        logger.info('Selecionando personagem', { id });
 
         const character = await CharactersApi.getCalculated(id);
 
@@ -93,21 +92,19 @@ const createCharacterStore = () => {
           isLoadingCurrent: false,
         }));
 
-        logger.characterAction('Personagem selecionado', id, {
-          name: character.name
-        });
+        logger.info('Personagem selecionado', { id, name: character.name });
 
       } catch (error: any) {
-        logger.error('Erro ao selecionar personagem', error, { characterId: id });
+        logger.error('Erro ao selecionar personagem', error, { id });
 
         update(state => ({
           ...state,
           currentCharacter: null,
           isLoadingCurrent: false,
-          error: error.message || ERROR_MESSAGES.CHARACTER.NOT_FOUND,
+          error: error.message || 'Personagem não encontrado',
         }));
 
-        toast.error(ERROR_MESSAGES.CHARACTER.NOT_FOUND);
+        toast.error('Personagem não encontrado');
       }
     },
 
@@ -118,20 +115,18 @@ const createCharacterStore = () => {
         error: null,
       }));
 
-      logger.characterAction('Seleção limpa');
+      logger.info('Seleção de personagem limpa');
     },
 
     // ==========================================
-    // AÇÕES DE CRUD
+    // CRIAR PERSONAGEM
     // ==========================================
 
     async create(data: CreateCharacterData): Promise<boolean> {
       update(state => ({ ...state, isSaving: true, error: null }));
 
       try {
-        logger.characterAction('Criando personagem', undefined, {
-          name: data.name
-        });
+        logger.info('Criando personagem', { name: data.name });
 
         const newCharacter = await CharactersApi.create(data);
 
@@ -145,11 +140,8 @@ const createCharacterStore = () => {
         // Seleciona o novo personagem
         await this.select(newCharacter.id);
 
-        logger.characterAction('Personagem criado', newCharacter.id, {
-          name: newCharacter.name
-        });
-
-        toast.success(SUCCESS_MESSAGES.CHARACTER.CREATED);
+        logger.info('Personagem criado', { id: newCharacter.id, name: newCharacter.name });
+        toast.success('Personagem criado com sucesso!');
 
         return true;
 
@@ -159,14 +151,17 @@ const createCharacterStore = () => {
         update(state => ({
           ...state,
           isSaving: false,
-          error: error.message || ERROR_MESSAGES.CHARACTER.CREATE_FAILED,
+          error: error.message || 'Erro ao criar personagem',
         }));
 
-        toast.error(ERROR_MESSAGES.CHARACTER.CREATE_FAILED);
-
+        toast.error('Erro ao criar personagem');
         return false;
       }
     },
+
+    // ==========================================
+    // ATUALIZAR PERSONAGEM
+    // ==========================================
 
     async updateCurrent(data: UpdateCharacterData): Promise<boolean> {
       const currentState = get({ subscribe });
@@ -180,9 +175,7 @@ const createCharacterStore = () => {
       update(state => ({ ...state, isSaving: true, error: null }));
 
       try {
-        logger.characterAction('Atualizando personagem', current.id, {
-          fields: Object.keys(data)
-        });
+        logger.info('Atualizando personagem', { id: current.id });
 
         const updatedCharacter = await CharactersApi.update(current.id, data);
 
@@ -192,79 +185,64 @@ const createCharacterStore = () => {
           characters: state.characters.map(char =>
             char.id === updatedCharacter.id ? updatedCharacter : char
           ),
+          currentCharacter: updatedCharacter,
           isSaving: false,
         }));
 
-        // Recarrega com dados calculados
-        await this.select(updatedCharacter.id);
-
-        logger.characterAction('Personagem atualizado', current.id, {
-          name: updatedCharacter.name
-        });
-
-        toast.success(SUCCESS_MESSAGES.CHARACTER.UPDATED);
+        logger.info('Personagem atualizado', { id: updatedCharacter.id });
+        toast.success('Personagem atualizado com sucesso!');
 
         return true;
 
       } catch (error: any) {
-        logger.error('Erro ao atualizar personagem', error, {
-          characterId: current.id,
-          fields: Object.keys(data)
-        });
+        logger.error('Erro ao atualizar personagem', error, { id: current.id });
 
         update(state => ({
           ...state,
           isSaving: false,
-          error: error.message || ERROR_MESSAGES.CHARACTER.UPDATE_FAILED,
+          error: error.message || 'Erro ao atualizar personagem',
         }));
 
-        toast.error(ERROR_MESSAGES.CHARACTER.UPDATE_FAILED);
-
+        toast.error('Erro ao atualizar personagem');
         return false;
       }
     },
 
-    async delete(id: number): Promise<boolean> {
-      const currentState = get({ subscribe });
-      const character = currentState.characters.find(c => c.id === id);
+    // ==========================================
+    // DELETAR PERSONAGEM
+    // ==========================================
 
-      if (!character) {
-        toast.error(ERROR_MESSAGES.CHARACTER.NOT_FOUND);
-        return false;
-      }
+    async delete(id: number): Promise<boolean> {
+      update(state => ({ ...state, isLoading: true, error: null }));
 
       try {
-        logger.characterAction('Deletando personagem', id, {
-          name: character.name
-        });
+        logger.info('Deletando personagem', { id });
 
         await CharactersApi.delete(id);
 
         // Remove da lista local
         update(state => ({
           ...state,
-          characters: state.characters.filter(c => c.id !== id),
-          // Limpa seleção se era o personagem atual
+          characters: state.characters.filter(char => char.id !== id),
           currentCharacter: state.currentCharacter?.id === id ? null : state.currentCharacter,
-          error: null,
+          isLoading: false,
         }));
 
-        logger.characterAction('Personagem deletado', id, {
-          name: character.name
-        });
-
-        toast.success(SUCCESS_MESSAGES.CHARACTER.DELETED);
+        logger.info('Personagem deletado', { id });
+        toast.success('Personagem removido com sucesso!');
 
         return true;
 
       } catch (error: any) {
-        logger.error('Erro ao deletar personagem', error, {
-          characterId: id,
-          name: character.name
-        });
+        logger.error('Erro ao deletar personagem', error, { id });
 
-        toast.error(ERROR_MESSAGES.CHARACTER.DELETE_FAILED);
+        update(state => ({
+          ...state,
+          isLoading: false,
+          error: error.message || 'Erro ao remover personagem',
+        }));
 
+        toast.error('Erro ao remover personagem');
         return false;
       }
     },
@@ -273,19 +251,18 @@ const createCharacterStore = () => {
     // UTILITÁRIOS
     // ==========================================
 
-    findById(id: number): Character | undefined {
-      const currentState = get({ subscribe });
-      return currentState.characters.find(c => c.id === id);
+    findById(id: number): Character | null {
+      const state = get({ subscribe });
+      return state.characters.find(char => char.id === id) || null;
     },
 
-    // Cria dados vazios para novo personagem
     createEmpty(): CreateCharacterData {
       return {
-        name: '',
+        name: 'Novo Personagem',
         data: {
           basicInfo: {
             playerName: '',
-            characterName: '',
+            characterName: 'Novo Personagem',
             characterImage: '',
             class: '',
             race: '',
@@ -297,7 +274,7 @@ const createCharacterStore = () => {
             weight: 0,
             height: 0,
             virtuePoints: 0,
-            currentLevel: 0,
+            currentLevel: 1,
             currentXp: 0,
             nextLevelXp: 1000,
           },
@@ -346,7 +323,6 @@ const createCharacterStore = () => {
       };
     },
 
-    // Inicialização (carrega lista se autenticado)
     async initialize(): Promise<void> {
       const authenticated = get(isAuthenticated);
 
@@ -358,13 +334,11 @@ const createCharacterStore = () => {
       }
     },
 
-    // Reset do store
     reset(): void {
       set(initialState);
       logger.info('Character store resetado');
     },
 
-    // Debug
     getState(): CharacterState {
       return get({ subscribe });
     },
@@ -415,58 +389,46 @@ export const charactersError = derived(
   $store => $store.error
 );
 
-// Estatísticas úteis
+// Estatísticas úteis - COM FALLBACKS SEGUROS
 export const charactersStats = derived(
   characters,
-  $characters => ({
-    total: $characters.length,
-    maxLevel: Math.max(...$characters.map(c => c.data.basicInfo.currentLevel), 0),
-    classes: [...new Set($characters.map(c => c.data.basicInfo.class))].filter(Boolean),
-    races: [...new Set($characters.map(c => c.data.basicInfo.race))].filter(Boolean),
-  })
-);
+  $characters => {
+    if (!$characters || $characters.length === 0) {
+      return {
+        total: 0,
+        maxLevel: 0,
+        uniqueClasses: 0,
+        classes: [],
+        races: [],
+      };
+    }
 
-// Personagem atual só dados básicos (sem calculated)
-export const currentCharacterBasic = derived(
-  currentCharacter,
-  $current => $current ? {
-    id: $current.id,
-    userId: $current.userId,
-    name: $current.name,
-    data: $current.data,
-    updatedAt: $current.updatedAt,
-    createdAt: $current.createdAt,
-  } : null
-);
+    const classes = [...new Set($characters.map(c => c.data?.basicInfo?.class).filter(Boolean))];
+    const races = [...new Set($characters.map(c => c.data?.basicInfo?.race).filter(Boolean))];
+    const levels = $characters.map(c => c.data?.basicInfo?.currentLevel || 0);
 
-// ==========================================
-// ACTIONS EXPORT
-// ==========================================
-
-export const {
-  loadAll: loadCharacters,
-  refresh: refreshCharacters,
-  select: selectCharacter,
-  clearCurrent: clearCurrentCharacter,
-  create: createCharacter,
-  updateCurrent: updateCurrentCharacter,
-  delete: deleteCharacter,
-  findById: findCharacterById,
-  createEmpty: createEmptyCharacter,
-  initialize: initializeCharacters,
-  reset: resetCharacters,
-  getState: getCharactersState,
-} = charactersStore;
-
-// ==========================================
-// AUTO-INITIALIZATION
-// ==========================================
-
-// Inicializa automaticamente quando auth muda
-isAuthenticated.subscribe(authenticated => {
-  if (authenticated) {
-    initializeCharacters();
-  } else {
-    resetCharacters();
+    return {
+      total: $characters.length,
+      maxLevel: Math.max(...levels, 0),
+      uniqueClasses: classes.length,
+      classes,
+      races,
+    };
   }
-});
+);
+
+// ==========================================
+// ACTIONS EXPORT - FUNÇÕES DIRETAS
+// ==========================================
+
+export const loadCharacters = () => charactersStore.loadAll();
+export const refreshCharacters = () => charactersStore.refresh();
+export const selectCharacter = (id: number) => charactersStore.select(id);
+export const clearCurrentCharacter = () => charactersStore.clearCurrent();
+export const createCharacter = (data: CreateCharacterData) => charactersStore.create(data);
+export const updateCurrentCharacter = (data: UpdateCharacterData) => charactersStore.updateCurrent(data);
+export const deleteCharacter = (id: number) => charactersStore.delete(id);
+export const findCharacterById = (id: number) => charactersStore.findById(id);
+export const createEmptyCharacter = () => charactersStore.createEmpty();
+export const initializeCharacters = () => charactersStore.initialize();
+export const resetCharacters = () => charactersStore.reset();

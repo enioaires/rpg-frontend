@@ -1,82 +1,117 @@
-<!-- src/routes/+layout.svelte -->
-<script lang="ts">
-	import '../app.css';
-	import { onMount } from 'svelte';
-	import { Toaster } from 'svelte-sonner';
-	import { isAuthenticated, currentUser } from '$lib/stores/auth';
-	import { logger } from '$lib/utils/logger';
-	import '$lib/init'; // Auto-inicialização
+<!-- ==========================================
+    LAYOUT PRINCIPAL COM AUTH MIDDLEWARE
+    ==========================================
+    Arquivo: src/routes/+layout.svelte
+-->
 
-	let { children } = $props();
+<script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
+	import { beforeNavigate, afterNavigate } from '$app/navigation';
+	import { handleNavigation, setupTokenWatcher } from '../hooks.client';
+	import { authStore, isAuthenticated, isAuthLoading } from '$lib/stores/auth';
+	import { logger } from '$lib/utils/logger';
+	import '../app.css'; // Tailwind CSS
 
 	// ==========================================
-	// LIFECYCLE
+	// PROPS DO SERVER
+	// ==========================================
+
+	let { data, children } = $props();
+
+	// ==========================================
+	// MIDDLEWARE DE NAVEGAÇÃO
+	// ==========================================
+
+	let tokenWatcherCleanup: (() => void) | undefined;
+
+	// Executa antes de cada navegação (client-side apenas)
+	beforeNavigate(async ({ to }) => {
+		if (!to) return;
+
+		try {
+			await handleNavigation({ url: to.url });
+		} catch (error) {
+			logger.error('❌ Navigation middleware error', error);
+		}
+	});
+
+	// Executa após cada navegação
+	afterNavigate(({ from, to }) => {
+		logger.debug('✅ After navigate', {
+			from: from?.url.pathname,
+			to: to?.url.pathname
+		});
+	});
+
+	// ==========================================
+	// INICIALIZAÇÃO
 	// ==========================================
 
 	onMount(() => {
-		logger.info('Layout montado');
+		logger.info('🚀 App layout mounted');
+
+		// Inicializa auth store
+		authStore.initialize();
+
+		// Configura watcher de token
+		tokenWatcherCleanup = setupTokenWatcher();
+	});
+
+	onDestroy(() => {
+		if (tokenWatcherCleanup) {
+			tokenWatcherCleanup();
+		}
+	});
+
+	// ==========================================
+	// DERIVED STATES (Svelte 5)
+	// ==========================================
+
+	const showLoadingScreen = $derived($isAuthLoading);
+
+	// Effects para logs (Svelte 5)
+	$effect(() => {
+		if ($isAuthenticated) {
+			logger.info('🔓 User authenticated');
+		} else if (!$isAuthLoading) {
+			logger.info('🔒 User not authenticated');
+		}
 	});
 </script>
 
 <!-- ==========================================
-     GLOBAL HEAD
+     LOADING SCREEN
      ========================================== -->
-<svelte:head>
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<meta name="theme-color" content="#2563eb" />
-</svelte:head>
-
-<!-- ==========================================
-     LAYOUT CONTENT
-     ========================================== -->
-
-<!-- Main Content -->
-<main class="min-h-screen bg-gray-50">
-	{@render children()}
-</main>
-
-<!-- Toast Notifications -->
-<Toaster position="top-right" richColors closeButton duration={4000} />
-
-<!-- Debug Info (desenvolvimento) -->
-{#if import.meta.env.DEV}
-	<div class="fixed bottom-4 left-4 z-50">
-		<details class="max-w-xs rounded bg-black/80 p-2 text-xs text-white">
-			<summary class="cursor-pointer">Debug Info</summary>
-			<div class="mt-2 space-y-1">
-				<div>Auth: {$isAuthenticated ? '✅' : '❌'}</div>
-				{#if $currentUser}
-					<div>User: {$currentUser.username}</div>
-				{/if}
-				<div>Env: {import.meta.env.MODE}</div>
-			</div>
-		</details>
+{#if showLoadingScreen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-white">
+		<div class="flex flex-col items-center space-y-4">
+			<div
+				class="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"
+			></div>
+			<p class="text-sm text-gray-600">Verificando autenticação...</p>
+		</div>
 	</div>
 {/if}
 
-<style>
-	/* Global mobile-first styles */
-	:global(html) {
-		scroll-behavior: smooth;
-	}
+<!-- ==========================================
+     LAYOUT PRINCIPAL - SEM HEADER
+     ========================================== -->
+<div class="min-h-screen bg-gray-50">
+	<!-- Main Content - Cada página cuida do próprio header -->
+	<main class="w-full">
+		{@render children()}
+	</main>
+</div>
 
-	:global(body) {
-		-webkit-font-smoothing: antialiased;
-		-moz-osx-font-smoothing: grayscale;
-	}
-
-	/* Improve focus visibility */
-	:global(*:focus-visible) {
-		outline: 2px solid #3b82f6; /* blue-500 */
-		outline-offset: 2px;
-	}
-
-	/* Better touch targets on mobile */
-	:global(button),
-	:global(a),
-	:global(input),
-	:global(select) {
-		min-height: 44px;
-		min-width: 44px;
-	}
-</style>
+<!-- ==========================================
+     GLOBAL ERROR BOUNDARY
+     ========================================== -->
+<svelte:window
+	on:error={(event: any) => {
+		logger.error('🚨 Unhandled error', event.error);
+	}}
+	on:unhandledrejection={(event) => {
+		logger.error('🚨 Unhandled promise rejection', event.reason);
+	}}
+/>

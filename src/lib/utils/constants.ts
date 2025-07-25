@@ -59,12 +59,12 @@ export const API_ENDPOINTS = {
 
   // Characters
   CHARACTERS: {
-    LIST: 'characters',
-    CREATE: 'characters',
-    GET: (id: number) => `characters/${id}`,
-    GET_CALCULATED: (id: number) => `characters/${id}/calculated`,
-    UPDATE: (id: number) => `characters/${id}`,
-    DELETE: (id: number) => `characters/${id}`,
+    LIST: '/characters',
+    CREATE: '/characters',
+    GET: (id: number) => `/characters/${id}`,
+    GET_CALCULATED: (id: number) => `/characters/${id}/calculated`,
+    UPDATE: (id: number) => `/characters/${id}`,
+    DELETE: (id: number) => `/characters/${id}`,
   },
 
   // Health
