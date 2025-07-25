@@ -1,208 +1,404 @@
-import { writable } from 'svelte/store';
+// ==========================================
+// AUTH STORE - Estado de Autenticação
+// ==========================================
+
+import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
-import ky from 'ky';
+import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
-import { config, logger } from '$lib/config';
+import { apiClient } from '../api/client';
+import { logger } from '../utils/logger';
+import {
+  STORAGE_KEYS,
+  SUCCESS_MESSAGES,
+  ERROR_MESSAGES,
+  ROUTES
+} from '../utils/constants';
 import type {
   User,
-  LoginData,
+  AuthState,
+  LoginCredentials,
   RegisterData,
-  AuthResult,
-  AuthSuccessResponse,
-  MeResponse
-} from '$lib/types/auth';
+  AuthResponse
+} from '../types';
 
-// Cliente HTTP configurado para autenticação
-const authApi = ky.create({
-  prefixUrl: config.api.baseUrl,
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  timeout: 10000, // 10 segundos
-  retry: {
-    limit: 2,
-    methods: ['post']
+// ==========================================
+// STORES PRIMÁRIAS
+// ==========================================
+
+const createAuthStore = () => {
+  const initialState: AuthState = {
+    user: null,
+    token: null,
+    isLoading: false,
+    isAuthenticated: false,
+  };
+
+  const { subscribe, set, update } = writable<AuthState>(initialState);
+
+  return {
+    subscribe,
+
+    // ==========================================
+    // AÇÕES DE AUTENTICAÇÃO
+    // ==========================================
+
+    async login(credentials: LoginCredentials): Promise<boolean> {
+      update(state => ({ ...state, isLoading: true }));
+
+      try {
+        logger.info('Tentativa de login', { identifier: credentials.identifier });
+
+        const response = await apiClient.post<AuthResponse>('/auth/login', {
+          login: credentials.identifier, // Backend espera 'login', não 'identifier'
+          password: credentials.password
+        });
+
+        if (response.success && response.data?.data) {
+          const { token, user } = response.data.data;
+
+          // Salva token no client
+          apiClient.setAuthToken(token);
+
+          // Salva dados no localStorage
+          if (browser) {
+            localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+            localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(user));
+          }
+
+          // Atualiza store
+          update(state => ({
+            ...state,
+            user,
+            token,
+            isLoading: false,
+            isAuthenticated: true,
+          }));
+
+          logger.authSuccess('Login', {
+            userId: user.id,
+            username: user.username
+          });
+
+          toast.success(SUCCESS_MESSAGES.AUTH.LOGIN);
+
+          return true;
+        } else {
+          throw new Error(response.error || ERROR_MESSAGES.AUTH.INVALID_CREDENTIALS);
+        }
+
+      } catch (error: any) {
+        logger.authError('Login', error);
+
+        update(state => ({
+          ...state,
+          isLoading: false,
+          isAuthenticated: false,
+        }));
+
+        toast.error(error.message || ERROR_MESSAGES.AUTH.INVALID_CREDENTIALS);
+
+        return false;
+      }
+    },
+
+    async register(data: RegisterData): Promise<boolean> {
+      update(state => ({ ...state, isLoading: true }));
+
+      try {
+        logger.info('Tentativa de registro', {
+          username: data.username,
+          email: data.email
+        });
+
+        const response = await apiClient.post<AuthResponse>('/auth/register', data);
+
+        if (response.success && response.data?.data) {
+          const { token, user } = response.data.data;
+
+          // Salva token no client
+          apiClient.setAuthToken(token);
+
+          // Salva dados no localStorage
+          if (browser) {
+            localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+            localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(user));
+          }
+
+          // Atualiza store
+          update(state => ({
+            ...state,
+            user,
+            token,
+            isLoading: false,
+            isAuthenticated: true,
+          }));
+
+          logger.authSuccess('Registro', {
+            userId: user.id,
+            username: user.username
+          });
+
+          toast.success(SUCCESS_MESSAGES.AUTH.REGISTER);
+
+          return true;
+        } else {
+          throw new Error(response.error || ERROR_MESSAGES.UNKNOWN);
+        }
+
+      } catch (error: any) {
+        logger.authError('Registro', error);
+
+        update(state => ({
+          ...state,
+          isLoading: false,
+          isAuthenticated: false,
+        }));
+
+        // Trata erros específicos
+        let errorMessage = ERROR_MESSAGES.UNKNOWN as string;
+        if (error.message?.includes('username')) {
+          errorMessage = ERROR_MESSAGES.AUTH.USER_EXISTS;
+        } else if (error.message?.includes('email')) {
+          errorMessage = ERROR_MESSAGES.AUTH.EMAIL_EXISTS;
+        }
+
+        toast.error(errorMessage);
+
+        return false;
+      }
+    },
+
+    async logout(): Promise<void> {
+      try {
+        logger.info('Tentativa de logout');
+
+        // Chama endpoint de logout (opcional - JWT é stateless)
+        await apiClient.post('/auth/logout');
+
+      } catch (error: any) {
+        // Logout local mesmo se API falhar
+        logger.warn('Erro no logout remoto, fazendo logout local', error);
+      } finally {
+        // Limpa tudo
+        apiClient.clearAuth();
+
+        if (browser) {
+          localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER_DATA);
+          localStorage.removeItem(STORAGE_KEYS.CURRENT_CHARACTER);
+        }
+
+        // Reset do store
+        set(initialState);
+
+        logger.authSuccess('Logout');
+        toast.success(SUCCESS_MESSAGES.AUTH.LOGOUT);
+
+        // Redireciona para login
+        if (browser) {
+          goto(ROUTES.LOGIN);
+        }
+      }
+    },
+
+    // ==========================================
+    // INICIALIZAÇÃO
+    // ==========================================
+
+    async initialize(): Promise<void> {
+      if (!browser) return;
+
+      try {
+        logger.info('Inicializando auth store');
+
+        // Carrega dados do localStorage
+        const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        const userData = localStorage.getItem(STORAGE_KEYS.USER_DATA);
+
+        if (token && userData) {
+          const user: User = JSON.parse(userData);
+
+          // Verifica se token ainda é válido
+          apiClient.setAuthToken(token);
+
+          if (apiClient.isAuthenticated()) {
+            // Token válido - restaura sessão
+            update(state => ({
+              ...state,
+              user,
+              token,
+              isAuthenticated: true,
+            }));
+
+            logger.authSuccess('Sessão restaurada', {
+              userId: user.id,
+              username: user.username
+            });
+          } else {
+            // Token expirado - limpa dados
+            logger.warn('Token expirado encontrado na inicialização');
+            this.logout();
+          }
+        } else {
+          logger.info('Nenhuma sessão encontrada');
+        }
+
+      } catch (error) {
+        logger.error('Erro na inicialização do auth', error);
+
+        // Em caso de erro, limpa tudo
+        this.logout();
+      }
+    },
+
+    // ==========================================
+    // UTILITÁRIOS
+    // ==========================================
+
+    updateUser(user: Partial<User>): void {
+      update(state => {
+        if (!state.user) return state;
+
+        const updatedUser = { ...state.user, ...user };
+
+        // Atualiza localStorage
+        if (browser) {
+          localStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(updatedUser));
+        }
+
+        logger.info('Dados do usuário atualizados', user);
+
+        return {
+          ...state,
+          user: updatedUser,
+        };
+      });
+    },
+
+    checkTokenExpiry(): boolean {
+      return apiClient.isAuthenticated();
+    },
+
+    // ==========================================
+    // RESET & DEBUG
+    // ==========================================
+
+    reset(): void {
+      set(initialState);
+      logger.info('Auth store resetado');
+    },
+
+    // Para debug em desenvolvimento
+    getState(): AuthState {
+      let currentState: AuthState = initialState;
+      subscribe(state => currentState = state)();
+      return currentState;
+    },
+  };
+};
+
+// ==========================================
+// STORE INSTANCE
+// ==========================================
+
+export const authStore = createAuthStore();
+
+// ==========================================
+// DERIVED STORES
+// ==========================================
+
+// Estado de carregamento
+export const isAuthLoading = derived(
+  authStore,
+  $auth => $auth.isLoading
+);
+
+// Status de autenticação
+export const isAuthenticated = derived(
+  authStore,
+  $auth => $auth.isAuthenticated
+);
+
+// Usuário atual
+export const currentUser = derived(
+  authStore,
+  $auth => $auth.user
+);
+
+// Token atual
+export const authToken = derived(
+  authStore,
+  $auth => $auth.token
+);
+
+// Permissões do usuário (futuro)
+export const userPermissions = derived(
+  authStore,
+  $auth => {
+    if (!$auth.user) return [];
+
+    // Por enquanto, todos os usuários têm as mesmas permissões
+    // Futuramente pode ser expandido baseado em roles
+    return ['read:characters', 'write:characters', 'delete:characters'];
   }
-});
+);
 
-// Estados da autenticação (stores reativos)
-export const user = writable<User | null>(null);
-export const token = writable<string | null>(null);
-export const isLoading = writable<boolean>(false);
-export const isAuthenticated = writable<boolean>(false);
+// ==========================================
+// GUARDS & UTILITIES
+// ==========================================
 
-// Carrega dados salvos no localStorage (apenas no browser)
+// Guard para rotas protegidas
+export const requireAuth = (callback?: () => void) => {
+  return derived(isAuthenticated, $isAuthenticated => {
+    if (!$isAuthenticated && browser) {
+      logger.warn('Acesso negado - usuário não autenticado');
+      toast.error(ERROR_MESSAGES.UNAUTHORIZED);
+      goto(ROUTES.LOGIN);
+      return false;
+    }
+
+    if ($isAuthenticated && callback) {
+      callback();
+    }
+
+    return $isAuthenticated;
+  });
+};
+
+// Guard para usuários não autenticados (login/register)
+export const requireGuest = () => {
+  return derived(isAuthenticated, $isAuthenticated => {
+    if ($isAuthenticated && browser) {
+      logger.info('Usuário já autenticado, redirecionando');
+      goto(ROUTES.DASHBOARD);
+      return false;
+    }
+
+    return !$isAuthenticated;
+  });
+};
+
+// ==========================================
+// ACTIONS EXPORT
+// ==========================================
+
+export const {
+  login,
+  register,
+  logout,
+  initialize,
+  updateUser,
+  checkTokenExpiry,
+  reset,
+  getState,
+} = authStore;
+
+// ==========================================
+// INICIALIZAÇÃO AUTOMÁTICA
+// ==========================================
+
+// Inicializa automaticamente quando o módulo é carregado
 if (browser) {
-  const savedToken = localStorage.getItem('rpg_token');
-  const savedUser = localStorage.getItem('rpg_user');
-
-  if (savedToken && savedUser) {
-    try {
-      token.set(savedToken);
-      user.set(JSON.parse(savedUser) as User);
-      isAuthenticated.set(true);
-      logger.info('Dados de autenticação restaurados do localStorage');
-    } catch (error) {
-      logger.error('Erro ao carregar dados salvos do localStorage', error);
-      // Limpa dados corrompidos
-      localStorage.removeItem('rpg_token');
-      localStorage.removeItem('rpg_user');
-      toast.error('Erro ao restaurar sessão. Faça login novamente.');
-    }
-  }
+  initialize();
 }
-
-// Função para fazer login
-export const login = async (loginData: LoginData): Promise<AuthResult> => {
-  isLoading.set(true);
-
-  try {
-    logger.info('Tentativa de login', { login: loginData.login });
-
-    const response = await authApi.post('auth/login', {
-      json: loginData
-    }).json<AuthSuccessResponse>();
-
-    // Salva no estado global
-    user.set(response.data.user);
-    token.set(response.data.token);
-    isAuthenticated.set(true);
-
-    // Persiste no localStorage
-    if (browser) {
-      localStorage.setItem('rpg_token', response.data.token);
-      localStorage.setItem('rpg_user', JSON.stringify(response.data.user));
-    }
-
-    logger.info('Login realizado com sucesso', {
-      userId: response.data.user.id,
-      username: response.data.user.username
-    });
-
-    toast.success(`Bem-vindo, ${response.data.user.name}!`);
-
-    return { success: true, data: response.data };
-
-  } catch (error) {
-    let errorMessage = 'Erro desconhecido no login';
-
-    if (error instanceof Error) {
-      // Trata erros do ky
-      try {
-        const errorResponse = await (error as any).response?.json();
-        errorMessage = errorResponse?.error || error.message;
-      } catch {
-        errorMessage = error.message;
-      }
-    }
-
-    logger.error('Erro no login', { error: errorMessage, login: loginData.login });
-    toast.error(errorMessage);
-
-    return { success: false, error: errorMessage };
-  } finally {
-    isLoading.set(false);
-  }
-};
-
-// Função para registrar
-export const register = async (registerData: RegisterData): Promise<AuthResult> => {
-  isLoading.set(true);
-
-  try {
-    logger.info('Tentativa de registro', {
-      username: registerData.username,
-      email: registerData.email
-    });
-
-    const response = await authApi.post('auth/register', {
-      json: registerData
-    }).json<AuthSuccessResponse>();
-
-    // Salva no estado global
-    user.set(response.data.user);
-    token.set(response.data.token);
-    isAuthenticated.set(true);
-
-    // Persiste no localStorage
-    if (browser) {
-      localStorage.setItem('rpg_token', response.data.token);
-      localStorage.setItem('rpg_user', JSON.stringify(response.data.user));
-    }
-
-    logger.info('Usuário registrado com sucesso', {
-      userId: response.data.user.id,
-      username: response.data.user.username
-    });
-
-    toast.success(`Conta criada com sucesso! Bem-vindo, ${response.data.user.name}!`);
-
-    return { success: true, data: response.data };
-
-  } catch (error) {
-    let errorMessage = 'Erro desconhecido no registro';
-
-    if (error instanceof Error) {
-      try {
-        const errorResponse = await (error as any).response?.json();
-        errorMessage = errorResponse?.error || error.message;
-      } catch {
-        errorMessage = error.message;
-      }
-    }
-
-    logger.error('Erro no registro', { error: errorMessage });
-    toast.error(errorMessage);
-
-    return { success: false, error: errorMessage };
-  } finally {
-    isLoading.set(false);
-  }
-};
-
-// Função para logout
-export const logout = (): void => {
-  logger.info('Logout realizado');
-
-  // Limpa estado global
-  user.set(null);
-  token.set(null);
-  isAuthenticated.set(false);
-
-  // Limpa localStorage
-  if (browser) {
-    localStorage.removeItem('rpg_token');
-    localStorage.removeItem('rpg_user');
-  }
-
-  toast.success('Logout realizado com sucesso');
-};
-
-// Função para validar token
-export const validateToken = async (): Promise<boolean> => {
-  if (!browser) return false;
-
-  const currentToken = localStorage.getItem('rpg_token');
-
-  if (!currentToken) {
-    logout();
-    return false;
-  }
-
-  try {
-    const response = await authApi.get('auth/me', {
-      headers: {
-        'Authorization': `Bearer ${currentToken}`
-      }
-    }).json<MeResponse>();
-
-    user.set(response.data.user);
-    logger.info('Token validado com sucesso');
-    return true;
-
-  } catch (error) {
-    logger.warn('Token inválido, fazendo logout automático');
-    logout();
-    return false;
-  }
-};
