@@ -1,9 +1,4 @@
-<!-- ==========================================
-    LAYOUT PRINCIPAL COM AUTH MIDDLEWARE
-    ==========================================
-    Arquivo: src/routes/+layout.svelte
--->
-
+<!-- src/routes/+layout.svelte -->
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
@@ -11,6 +6,7 @@
 	import { handleNavigation, setupTokenWatcher } from '../hooks.client';
 	import { authStore, isAuthenticated, isAuthLoading } from '$lib/stores/auth';
 	import { logger } from '$lib/utils/logger';
+	import Header from '$lib/components/Header.svelte';
 	import '../app.css'; // Tailwind CSS
 
 	// ==========================================
@@ -65,12 +61,29 @@
 	});
 
 	// ==========================================
-	// DERIVED STATES (Svelte 5)
+	// DERIVED STATES
 	// ==========================================
 
 	const showLoadingScreen = $derived($isAuthLoading);
 
-	// Effects para logs (Svelte 5)
+	// Determina se deve mostrar header
+	const shouldShowHeader = $derived(() => {
+		if (!$isAuthenticated) return false;
+
+		const pathname = $page.url.pathname;
+
+		// Não mostra header nas páginas de auth
+		const authPages = ['/login', '/register'];
+		if (authPages.includes(pathname)) return false;
+
+		// Não mostra na home
+		if (pathname === '/') return false;
+
+		// Mostra em todas as outras páginas autenticadas
+		return true;
+	});
+
+	// Effects para logs
 	$effect(() => {
 		if ($isAuthenticated) {
 			logger.info('🔓 User authenticated');
@@ -95,11 +108,16 @@
 {/if}
 
 <!-- ==========================================
-     LAYOUT PRINCIPAL - SEM HEADER
+     LAYOUT PRINCIPAL
      ========================================== -->
 <div class="min-h-screen bg-gray-50">
-	<!-- Main Content - Cada página cuida do próprio header -->
-	<main class="w-full">
+	<!-- Header Global - Aparece apenas quando autenticado e fora das páginas de auth -->
+	{#if shouldShowHeader()}
+		<Header />
+	{/if}
+
+	<!-- Main Content -->
+	<main class="w-full" class:pt-0={!shouldShowHeader}>
 		{@render children()}
 	</main>
 </div>
