@@ -1,8 +1,4 @@
-// ==========================================
-// CHARACTERS API - Corrigida para Response Format
-// ==========================================
-// Arquivo: src/lib/api/characters.ts
-
+// src/lib/api/characters.ts - FIXED VERSION
 import { apiClient } from './client';
 import { logger } from '../utils/logger';
 import { API_ENDPOINTS } from '../utils/constants';
@@ -12,10 +8,6 @@ import type {
   CreateCharacterData,
   UpdateCharacterData
 } from '../types';
-
-// ==========================================
-// CHARACTERS API SERVICE
-// ==========================================
 
 export class CharactersApi {
 
@@ -59,8 +51,8 @@ export class CharactersApi {
 
       const response = await apiClient.get<any>(`${API_ENDPOINTS.CHARACTERS.LIST}/${id}`);
 
-      if (response.success && response.data?.data) {
-        return response.data.data;
+      if (response.success && response.data?.data?.character) {
+        return response.data.data.character;
       }
 
       throw new Error('Personagem não encontrado');
@@ -82,11 +74,20 @@ export class CharactersApi {
 
       const response = await apiClient.get<any>(`${API_ENDPOINTS.CHARACTERS.LIST}/${id}/calculated`);
 
-      if (response.success && response.data?.data) {
-        return response.data.data;
+      // CORRIGIDO: A resposta vem como {data: {character: {...}}}
+      if (response.success && response.data?.data?.character) {
+        const character = response.data.data.character;
+
+        logger.info('Personagem calculado carregado', {
+          id: character.id,
+          name: character.name,
+          hasCalculated: !!character.calculated
+        });
+
+        return character;
       }
 
-      throw new Error('Personagem não encontrado');
+      throw new Error('Personagem não encontrado ou dados calculados indisponíveis');
 
     } catch (error: any) {
       logger.error('Erro ao carregar personagem calculado', error, { id });
@@ -105,8 +106,8 @@ export class CharactersApi {
 
       const response = await apiClient.post<any>(API_ENDPOINTS.CHARACTERS.CREATE, data);
 
-      if (response.success && response.data?.data) {
-        const character = response.data.data;
+      if (response.success && response.data?.data?.character) {
+        const character = response.data.data.character;
 
         logger.info('Personagem criado', {
           id: character.id,
@@ -119,7 +120,7 @@ export class CharactersApi {
       throw new Error('Falha ao criar personagem');
 
     } catch (error: any) {
-      logger.error('Erro ao criar personagem', error, { name: data.name });
+      logger.error('Erro ao criar personagem', error);
       throw error;
     } finally {
       startTime();
@@ -131,12 +132,12 @@ export class CharactersApi {
     const startTime = logger.startTimer('characters.update');
 
     try {
-      logger.info('Atualizando personagem', { id });
+      logger.info('Atualizando personagem', { id, data });
 
       const response = await apiClient.put<any>(`${API_ENDPOINTS.CHARACTERS.LIST}/${id}`, data);
 
-      if (response.success && response.data?.data) {
-        const character = response.data.data;
+      if (response.success && response.data?.data?.character) {
+        const character = response.data.data.character;
 
         logger.info('Personagem atualizado', {
           id: character.id,
@@ -156,24 +157,24 @@ export class CharactersApi {
     }
   }
 
-  // DELETE /characters/:id - Remove personagem
+  // DELETE /characters/:id - Deleta personagem
   static async delete(id: number): Promise<void> {
     const startTime = logger.startTimer('characters.delete');
 
     try {
-      logger.info('Removendo personagem', { id });
+      logger.info('Deletando personagem', { id });
 
       const response = await apiClient.delete<any>(`${API_ENDPOINTS.CHARACTERS.LIST}/${id}`);
 
       if (response.success) {
-        logger.info('Personagem removido', { id });
+        logger.info('Personagem deletado', { id });
         return;
       }
 
-      throw new Error('Falha ao remover personagem');
+      throw new Error('Falha ao deletar personagem');
 
     } catch (error: any) {
-      logger.error('Erro ao remover personagem', error, { id });
+      logger.error('Erro ao deletar personagem', error, { id });
       throw error;
     } finally {
       startTime();

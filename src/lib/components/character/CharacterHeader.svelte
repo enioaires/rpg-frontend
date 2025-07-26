@@ -1,9 +1,8 @@
+<!-- src/lib/components/character/CharacterHeader.svelte -->
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import Badge from '$lib/components/ui/Badge.svelte';
 	import ProgressBar from '$lib/components/ui/ProgressBar.svelte';
-	import Button from '$lib/components/ui/Button.svelte';
-	import type { CalculatedCharacter } from '$lib/types/character';
+	import type { CalculatedCharacter } from '$lib/types';
 
 	// Props do componente
 	export let character: CalculatedCharacter;
@@ -15,11 +14,11 @@
 		edit: { character: CalculatedCharacter };
 	}>();
 
-	// Dados extraídos
-	$: basicInfo = character.data.basicInfo;
-	$: calculated = character.calculated;
-	$: level = calculated.progression.currentLevel;
-	$: xpProgress = calculated.progression.xpProgress;
+	// Dados extraídos - COM PROTEÇÃO
+	$: basicInfo = character?.data?.basicInfo;
+	$: calculated = character?.calculated;
+	$: level = basicInfo?.currentLevel || 1;
+	// Removido xpProgress pois agora vem da API calculated
 
 	const handleBack = () => {
 		dispatch('back');
@@ -30,11 +29,15 @@
 	};
 </script>
 
-<div class="border-b border-gray-200 bg-white px-4 py-6 sm:px-6">
-	<div class="flex items-center justify-between">
+<div class="border-b border-gray-200 bg-white">
+	<!-- Barra de navegação -->
+	<div class="flex items-center justify-between px-4 py-4 sm:px-6">
 		<!-- Voltar -->
 		{#if showBackButton}
-			<Button variant="ghost" size="sm" on:click={handleBack} class="flex items-center space-x-1">
+			<button
+				on:click={handleBack}
+				class="flex items-center space-x-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-900"
+			>
 				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path
 						stroke-linecap="round"
@@ -44,14 +47,17 @@
 					/>
 				</svg>
 				<span>Voltar</span>
-			</Button>
+			</button>
 		{:else}
 			<div></div>
 		{/if}
 
 		<!-- Editar -->
 		{#if showEditButton}
-			<Button variant="outline" size="sm" on:click={handleEdit} class="flex items-center space-x-1">
+			<button
+				on:click={handleEdit}
+				class="flex items-center space-x-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+			>
 				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path
 						stroke-linecap="round"
@@ -61,14 +67,14 @@
 					/>
 				</svg>
 				<span>Editar</span>
-			</Button>
+			</button>
 		{/if}
 	</div>
 
 	<!-- Header principal -->
-	<div class="mt-4">
+	<div class="px-4 pb-6 sm:px-6">
 		<div class="flex items-start space-x-4">
-			<!-- Avatar grande -->
+			<!-- Avatar -->
 			<div class="flex-shrink-0">
 				{#if basicInfo.characterImage}
 					<img
@@ -100,110 +106,115 @@
 			<!-- Informações principais -->
 			<div class="min-w-0 flex-1">
 				<!-- Nome e nível -->
-				<div class="flex items-center space-x-3">
+				<div class="mb-1 flex items-center space-x-3">
 					<h1 class="truncate text-2xl font-bold text-gray-900">
-						{basicInfo.characterName || character.name}
+						{basicInfo?.characterName || character.name || 'Sem nome'}
 					</h1>
-					<Badge variant="info" size="lg">
+					<span class="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-800">
 						Nível {level}
-					</Badge>
-				</div>
-
-				<!-- Jogador -->
-				<p class="mt-1 text-sm text-gray-600">
-					Jogado por <span class="font-medium">{basicInfo.playerName}</span>
-				</p>
-
-				<!-- Badges de informações -->
-				<div class="mt-2 flex flex-wrap gap-2">
-					{#if basicInfo.class}
-						<Badge variant="default">{basicInfo.class}</Badge>
-					{/if}
-					{#if basicInfo.race}
-						<Badge variant="secondary">{basicInfo.race}</Badge>
-					{/if}
-					{#if basicInfo.deity}
-						<Badge variant="outline">🙏 {basicInfo.deity}</Badge>
-					{/if}
-					{#if basicInfo.alignment}
-						<Badge variant="outline">{basicInfo.alignment}</Badge>
-					{/if}
-					{#if basicInfo.virtuePoints > 0}
-						<Badge variant="warning">✨ {basicInfo.virtuePoints} VP</Badge>
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- Progresso de XP -->
-		{#if calculated.progression.xpForNext > 0}
-			<div class="mt-4 space-y-2">
-				<div class="flex items-center justify-between text-sm">
-					<span class="font-medium text-gray-700">Experiência</span>
-					<span class="text-gray-500">
-						{calculated.progression.xpCurrent} / {calculated.progression.xpForNext} XP
 					</span>
 				</div>
 
-				<ProgressBar
-					value={calculated.progression.xpCurrent}
-					max={calculated.progression.xpForNext}
-					size="md"
-					variant="info"
-					animated={true}
-					showPercentage={true}
-				/>
+				<!-- Jogador -->
+				<p class="mb-2 text-sm text-gray-600">
+					Jogado por <span class="font-medium">{basicInfo?.playerName || 'Jogador'}</span>
+				</p>
 
-				<div class="flex justify-between text-xs text-gray-500">
-					<span>Nível {level}</span>
-					<span>{xpProgress}% para o próximo nível</span>
-					<span>Nível {calculated.progression.nextLevel}</span>
+				<!-- Badges de informações - SIMPLIFICADOS -->
+				<div class="mb-3 flex flex-wrap gap-2">
+					{#if basicInfo?.class}
+						<span class="rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-800"
+							>{basicInfo.class}</span
+						>
+					{/if}
+					{#if basicInfo?.race}
+						<span class="rounded-md bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800"
+							>{basicInfo.race}</span
+						>
+					{/if}
 				</div>
-			</div>
-		{/if}
 
-		<!-- Status rápido -->
-		<div class="mt-4 grid grid-cols-3 gap-4 text-center">
-			<!-- Vitalidade -->
-			<div class="rounded-lg bg-red-50 p-3">
-				<div class="text-lg font-semibold text-red-700">
-					{calculated.vitality.total}
-				</div>
-				<div class="text-xs text-red-600">Vitalidade</div>
-			</div>
-
-			<!-- Berkana -->
-			<div class="rounded-lg bg-blue-50 p-3">
-				<div class="text-lg font-semibold text-blue-700">
-					{calculated.berkana.total}
-				</div>
-				<div class="text-xs text-blue-600">Berkana</div>
-			</div>
-
-			<!-- Atributo mais alto -->
-			<div class="rounded-lg bg-green-50 p-3">
-				{#if calculated.attributes.totals}
-					{@const highestAttr = Object.entries(calculated.attributes.totals).reduce((a, b) =>
-						a[1] > b[1] ? a : b
-					)}
-					<div class="text-lg font-semibold text-green-700">
-						{highestAttr[1]}
+				<!-- Experiência -->
+				{#if calculated?.progression}
+					<div class="space-y-1">
+						<div class="flex items-center justify-between text-sm">
+							<span class="font-medium text-gray-700">Experiência</span>
+							<span class="text-gray-500"
+								>{calculated.progression.xpCurrent} / {calculated.progression.xpForNext} XP</span
+							>
+						</div>
+						<ProgressBar value={calculated.progression.xpProgress} color="blue" size="sm" />
 					</div>
-					<div class="text-xs text-green-600 capitalize">
-						{highestAttr[0]}
-					</div>
-				{:else}
-					<div class="text-lg font-semibold text-green-700">--</div>
-					<div class="text-xs text-green-600">Atributo</div>
 				{/if}
 			</div>
 		</div>
+
+		<!-- Stats rápidos - Mobile First -->
+		{#if calculated}
+			<div class="mt-6 grid grid-cols-3 gap-4">
+				<!-- Vitalidade -->
+				<div class="rounded-lg bg-red-50 p-3 text-center">
+					<div class="mb-1 text-xs text-red-600">Vitalidade</div>
+					<div class="text-lg font-bold text-red-900">{calculated.vitality?.total || 0}</div>
+				</div>
+
+				<!-- Berkana -->
+				<div class="rounded-lg bg-blue-50 p-3 text-center">
+					<div class="mb-1 text-xs text-blue-600">Berkana</div>
+					<div class="text-lg font-bold text-blue-900">{calculated.berkana?.total || 0}</div>
+				</div>
+
+				<!-- Pontos de Virtude -->
+				<div class="rounded-lg bg-yellow-50 p-3 text-center">
+					<div class="mb-1 text-xs text-yellow-600">Virtude</div>
+					<div class="text-lg font-bold text-yellow-900">{basicInfo?.virtuePoints || 0}</div>
+				</div>
+			</div>
+
+			<!-- Informações Pessoais Detalhadas -->
+			<div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+				{#if basicInfo?.deity}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Divindade:</span>
+						<span class="font-medium">{basicInfo.deity}</span>
+					</div>
+				{/if}
+
+				{#if basicInfo?.homeland}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Terra Natal:</span>
+						<span class="font-medium">{basicInfo.homeland}</span>
+					</div>
+				{/if}
+
+				{#if basicInfo?.age && basicInfo.age > 0}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Idade:</span>
+						<span class="font-medium">{basicInfo.age} anos</span>
+					</div>
+				{/if}
+
+				{#if basicInfo?.height && basicInfo.height > 0}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Altura:</span>
+						<span class="font-medium">{basicInfo.height} cm</span>
+					</div>
+				{/if}
+
+				{#if basicInfo?.weight && basicInfo.weight > 0}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Peso:</span>
+						<span class="font-medium">{basicInfo.weight} kg</span>
+					</div>
+				{/if}
+
+				{#if basicInfo?.alignment}
+					<div class="flex justify-between">
+						<span class="text-gray-600">Alinhamento:</span>
+						<span class="font-medium">{basicInfo.alignment}</span>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 </div>
-
-<style>
-	/* Gradiente sutil no background */
-	.bg-gradient-to-br {
-		background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
-	}
-</style>
